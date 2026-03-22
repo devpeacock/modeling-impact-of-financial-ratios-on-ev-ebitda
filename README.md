@@ -1,149 +1,187 @@
-# Modeling EV/EBITDA with Financial Ratios
+# Modeling the Impact of Financial Ratios on EV/EBITDA
 
-Projekt laczy ekonometrie, machine learning i klasteryzacje, aby odpowiedziec na pytanie:
+This project combines econometrics, machine learning, and clustering to explain cross-sectional differences in EV/EBITDA multiples.
 
-**co najbardziej tlumaczy roznice w mnozniku EV/EBITDA miedzy spolkami?**
-
-Analiza zostala przeprowadzona etapowo w notebookach `01-04` i konczy sie porownaniem podejsc modelowych oraz interpretacja wynikow w jezyku biznesowym.
+The workflow moves from raw financial data and rigorous cleaning, through regression-based inference and predictive modeling, to company archetype discovery. The goal is not only to improve fit, but also to understand which financial profiles the market rewards with higher valuation multiples.
 
 ## Executive Summary
 
-- Po solidnym czyszczeniu danych jakosc modeli rosnie wyraznie: model OLS na probce minimalnie czyszczonej daje ok. `R^2=0.028`, a po pelnym czyszczeniu ok. `R^2=0.188`.
-- Korekta heteroskedastycznosci (WLS/FGLS-like) poprawia dopasowanie do ok. `R^2=0.220`.
-- Najlepszy model predykcyjny out-of-sample to **tuned XGBoost**: `R^2=0.3313`, `MAE=3.5877`, `RMSE=4.6996`, `MAPE=47.93%`.
-- Klasteryzacja firm (`k=4`) pokazuje istotne roznice wycen miedzy archetypami biznesowymi (`Kruskal H=69.23`, `p<0.001`).
-- Najwyzsza mediana EV/EBITDA wystepuje w klastrze o profilu **innovation + growth** (`14.079`), najnizsza w klastrze **market core** (`9.730`).
+- Data quality is a first-order issue: the baseline linear model improves from about `R^2=0.028` on a minimally cleaned sample to about `R^2=0.188` after structured cleaning.
+- Correcting for heteroskedasticity with WLS/FGLS-like estimation lifts fit further to about `R^2=0.220`.
+- The best out-of-sample predictive model is **tuned XGBoost** with `R^2=0.3313`, `MAE=3.5877`, `RMSE=4.6996`, and `MAPE=47.93%`.
+- Clustering identifies four distinct company archetypes with statistically significant valuation differences (`Kruskal H=69.23`, `p<0.001`).
+- The highest EV/EBITDA median is observed in the **innovation + growth** cluster (`14.079`), while the lowest is found in the **market core** cluster (`9.730`).
 
-## Zakres i Dane
+## Research Scope
 
-Wejsciem jest zbior surowy `data/raw/dane_finansowe.csv`, a nastepnie kolejne wersje danych przetworzonych.
+The analysis starts from [data/raw/dane_finansowe.csv](data/raw/dane_finansowe.csv) and progresses through cleaned and modeling-ready datasets stored in [data/processed](data/processed).
 
-Glowna grupa zmiennych obejmuje m.in.:
+The main explanatory variables include:
 
-- wzrost (`Revenue_Growth`),
-- rentownosc (`Profit_Margin`, `Gross_Profit_Margin`, `Return_on_Equity`),
-- efektywnosc (`Asset_Turnover`, `Fixed_Asset_Turnover`),
-- zadluzenie (`Debt_to_Equity`),
-- inwestycje (`CAPEX_to_Revenue`, `R&D_to_Revenue`),
-- plynnosc (`Current_Ratio`),
-- wyplate dla akcjonariuszy (`Dividend_Yield`).
+- growth: `Revenue_Growth`
+- profitability: `Profit_Margin`, `Gross_Profit_Margin`, `Return_on_Equity`
+- efficiency: `Asset_Turnover`, `Fixed_Asset_Turnover`
+- leverage: `Debt_to_Equity`
+- investment intensity: `CAPEX_to_Revenue`, `R&D_to_Revenue`
+- liquidity: `Current_Ratio`
+- shareholder payout: `Dividend_Yield`
 
-## Co Zostalo Zrobione (Notebooki 01-04)
+## Project Structure
 
-### 1) Data and Problem Setup (`01_data_and_problem_setup.ipynb`)
+### 1. Data and Problem Setup
 
-Wykonano pipeline przygotowania danych do modelowania:
+Notebook: [notebooks_new/01_data_and_problem_setup.ipynb](notebooks_new/01_data_and_problem_setup.ipynb)
 
-- kontrola brakow i wartosci skrajnych,
-- filtrowanie EV/EBITDA oraz wskaznikow finansowych (progi ekonomiczne + percentyle),
-- budowa wersji danych od "minimalnie czyszczonej" do "modeling-ready".
+This stage prepares the modeling dataset by:
 
-Najwazniejszy efekt etapu: **stabilniejsza, bardziej wiarygodna baza** do estymacji.
+- checking data completeness and identifying implausible values
+- filtering EV/EBITDA and ratio outliers using economic thresholds and percentile rules
+- moving from a minimally cleaned sample to a modeling-ready dataset
 
-### 2) Econometric Analysis (`02_econometric_analysis.ipynb`)
+Main outcome: a more economically consistent and statistically stable base for downstream modeling.
 
-Przeprowadzono pelna analize regresyjna:
+### 2. Econometric Analysis
 
-- OLS (bazowy),
-- testy diagnostyczne (Breusch-Pagan, White, Jarque-Bera, RESET),
-- analiza punktow wplywowych (Cook's distance),
-- WLS/FGLS-like jako odpowiedz na heteroskedastycznosc,
-- testy roli sektorow i stabilnosci struktury.
+Notebook: [notebooks_new/02_econometric_analysis.ipynb](notebooks_new/02_econometric_analysis.ipynb)
 
-Wyniki kluczowe:
+This notebook develops the regression framework through:
 
-- `R^2=0.188` (OLS, cleaned benchmark),
-- `R^2=0.220` (WLS/FGLS-like),
-- heteroskedastycznosc i napiecie formy funkcyjnej sa statystycznie istotne,
-- efekt sektorowy jest istotny i nie powinien byc pomijany.
+- baseline OLS estimation
+- residual diagnostics: Breusch-Pagan, White, Jarque-Bera, and RESET tests
+- influential-point filtering using Cook's distance
+- WLS/FGLS-like estimation to address heteroskedasticity
+- sector-effect and structural-stability checks
 
-### 3) Machine Learning Models (`03_machine_learning_models.ipynb`)
+Key results:
 
-Porownano kilka klas modeli i skupiono sie na metryce out-of-sample `R^2`:
+- OLS on the cleaned benchmark: `R^2=0.188`
+- WLS/FGLS-like specification: `R^2=0.220`
+- heteroskedasticity is statistically significant
+- sector controls are economically and statistically important
 
-- WLS benchmark na tym samym podziale train/test,
-- XGBoost baseline,
-- XGBoost tuned (RandomizedSearchCV),
-- LightGBM, CatBoost, Random Forest, Ridge,
-- warianty ensemble/stacking/log-target oraz analiza wyjasnialnosci (SHAP).
+### 3. Machine Learning Models
 
-Wyniki kluczowe:
+Notebook: [notebooks_new/03_machine_learning_models.ipynb](notebooks_new/03_machine_learning_models.ipynb)
 
-- WLS (test): `R^2=0.2472` (weighted test `R^2=0.2734`),
-- XGBoost baseline: `R^2=0.3081`,
-- **XGBoost tuned: `R^2=0.3313` (najlepszy wynik),**
-- LightGBM: ok. `R^2=0.3178`,
-- rozwiazania ensemble poprawialy profil bledow, ale nie przebily tuned XGBoost w top-line `R^2`.
+This stage compares predictive models using out-of-sample `R^2` as the primary ranking metric.
 
-Interpretacja: zaleznosci w danych sa czesciowo nieliniowe i interakcyjne, dlatego modele drzewiaste wypadaja lepiej od prostych modeli liniowych.
+Models and procedures include:
 
-### 4) Clustering Companies (`04_clustering_comapnies.ipynb`)
+- WLS benchmark on a consistent train/test split
+- baseline XGBoost
+- tuned XGBoost with `RandomizedSearchCV`
+- LightGBM, CatBoost, Random Forest, and Ridge
+- ensemble variants and SHAP-based interpretability
 
-Wykonano segmentacje firm metoda K-means (`k=4`) oraz profilowanie klastrow:
+Key results:
 
-- standaryzacja cech,
-- dobor i walidacja liczby klastrow,
-- wizualizacje (PCA, silhouette),
-- testy roznic miedzy grupami,
-- eksport list firm i statystyk klastrow do CSV.
+- WLS test performance: `R^2=0.2472` and weighted test `R^2=0.2734`
+- XGBoost baseline: `R^2=0.3081`
+- tuned XGBoost: `R^2=0.3313`
+- LightGBM: about `R^2=0.3178`
 
-Wyniki kluczowe:
+Interpretation: non-linear effects and feature interactions matter, which is why tree-based models outperform the linear benchmark in predictive terms.
 
-- mean silhouette: `0.3175` (umiarkowanie czytelny podzial),
-- istotne roznice EV/EBITDA miedzy klastrami (`H=69.23`, `p<0.001`),
-- mediany EV/EBITDA:
-  - Cluster 4: `14.079` (najwyzsza premia),
-  - Cluster 1: `11.726`,
-  - Cluster 2: `9.785`,
-  - Cluster 3: `9.730` (najnizsza).
+### 4. Clustering Companies
 
-## Najwazniejsze Wyniki Przekrojowe
+Notebook: [notebooks_new/04_clustering_comapnies.ipynb](notebooks_new/04_clustering_comapnies.ipynb)
 
-1. **Jakosc danych jest krytyczna.**
-Lepsze czyszczenie radykalnie poprawia sygnal modelowy i stabilnosc wnioskow.
+This notebook segments firms into business archetypes using K-means clustering.
 
-2. **ML wygrywa z klasycznym modelem liniowym w predykcji out-of-sample.**
-Najlepszy wynik daje tuned XGBoost (`R^2=0.3313`) vs WLS (`R^2=0.2472`).
+The workflow includes:
 
-3. **Heteroskedastycznosc nie jest detalem technicznym, tylko realna cecha danych.**
-Wazenie obserwacji (WLS) poprawia dopasowanie i daje bardziej realistyczne wnioskowanie.
+- feature standardization
+- cluster-count validation
+- PCA and silhouette-based diagnostics
+- statistical testing of between-cluster differences
+- export of cluster company lists and descriptive statistics
 
-4. **Segmentacja odslania archetypy biznesowe, ktorych nie widac w jednej sredniej regresji.**
-Profil innovation + growth ma wyrazna premie wyceny wzgledem profilu neutralnego.
+Key results:
 
-## Wnioski Biznesowe
+- mean silhouette: `0.3175`
+- EV/EBITDA differs significantly across clusters: `H=69.23`, `p<0.001`
+- EV/EBITDA medians by cluster:
+  - Cluster 4: `14.079`
+  - Cluster 1: `11.726`
+  - Cluster 2: `9.785`
+  - Cluster 3: `9.730`
 
-- Rynek premiuje spolki laczace wzrost i inwestycje rozwojowe (szczegolnie R&D), przy relatywnie kontrolowanym ryzyku finansowania.
-- Sama wysoka rentownosc nie zawsze przeklada sie na wyzszy mnoznik, jezeli towarzyszy jej podwyzszone ryzyko bilansowe.
-- Modelowanie wieloklasowe (ekonometria + ML + clustering) daje pelniejszy obraz niz jedna technika uzyta w izolacji.
+## Cross-Sectional Findings
 
-## Ograniczenia i Ryzyka Interpretacji
+1. **Data cleaning materially changes model quality.**
+Structured filtering removes economically inconsistent observations and substantially improves signal quality.
 
-- Analiza ma charakter przekrojowy, wiec nie jest to model przyczynowy.
-- Wyniki zaleza od przyjetej logiki czyszczenia danych i filtrow outlierow.
-- Istnieje ryzyko pominietych zmiennych (np. czynniki makro, jakosc zarzadzania, zdarzenia jednorazowe).
-- Separacja klastrow jest umiarkowana, wiec granice miedzy profilami nie sa idealnie ostre.
+2. **Machine learning outperforms the linear benchmark in out-of-sample prediction.**
+The strongest result comes from tuned XGBoost (`R^2=0.3313`) versus WLS (`R^2=0.2472`).
 
-## Artefakty Projektu
+3. **Heteroskedasticity is a real feature of the data, not a technical footnote.**
+Weighted estimation produces a measurable gain and supports more credible inference.
 
-Kluczowe pliki wyjsciowe:
+4. **Clustering reveals valuation archetypes that are not visible in a single average regression.**
+The innovation-oriented growth profile commands a clear valuation premium over the neutral core profile.
 
-- `data/processed/df_cleaned.csv`
-- `data/processed/df_sectors_cook2.csv`
-- `data/processed/ml_train_dataset_used_for_models.csv`
-- `data/processed/ml_test_dataset_used_for_models.csv`
-- `data/processed/clusters/companies/cluster_company_list_*.csv`
-- `data/processed/clusters/statistics/cluster_statistics_*.csv`
+## Business Interpretation
 
-Notebooki:
+- The market rewards firms that combine growth and development intensity, especially when innovation spending is not accompanied by excessive leverage.
+- High profitability alone does not guarantee a premium multiple if balance-sheet risk remains elevated.
+- A combined framework using econometrics, machine learning, and clustering provides a fuller view than any single method used in isolation.
 
-- `notebooks_new/01_data_and_problem_setup.ipynb`
-- `notebooks_new/02_econometric_analysis.ipynb`
-- `notebooks_new/03_machine_learning_models.ipynb`
-- `notebooks_new/04_clustering_comapnies.ipynb`
+## Reproducibility
 
-## Podsumowanie
+The project was developed and run locally with a Python virtual environment. To reproduce the analysis, create a fresh `venv`, install the notebook dependencies from [requirements.txt](requirements.txt), and use that environment as the notebook kernel.
 
-Projekt dostarcza spojny workflow od przygotowania danych, przez rygorystyczna diagnostyke ekonometryczna, po nowoczesne modele ML i segmentacje firm.
+### Recommended setup on Windows
 
-Najmocniejszy wniosek praktyczny: **premia wyceny jest powiazana nie tylko z biezaca rentownoscia, ale rowniez z profilem wzrostu, innowacyjnosci i struktura ryzyka.**
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m ipykernel install --user --name modeling-ev-ebitda --display-name "Python (modeling-ev-ebitda)"
+```
+
+Then open the notebooks in VS Code and select the `Python (modeling-ev-ebitda)` kernel.
+
+### Notes on reproducibility
+
+- The repository includes the processed datasets used by the notebooks, which makes the workflow reproducible without reconstructing every intermediate file from scratch.
+- `requirements.txt` captures the core Python dependencies referenced in the notebooks.
+- The notebooks are intended to be run in order, from notebook `01` through `04`.
+- Some outputs may vary slightly across environments because of package-version differences and model stochasticity, but the reported ranking and main conclusions should remain stable if the same versions are used.
+
+## Limitations
+
+- The analysis is cross-sectional rather than causal.
+- Results depend on the adopted cleaning logic and outlier treatment.
+- Some relevant valuation drivers are not observed directly, such as management quality, macro exposure, or one-off corporate events.
+- Cluster separation is meaningful but not perfectly sharp, so firm-level boundaries between archetypes should not be treated as absolute.
+
+## Repository Contents
+
+Core outputs:
+
+- [data/processed/df_cleaned.csv](data/processed/df_cleaned.csv)
+- [data/processed/df_sectors_cook2.csv](data/processed/df_sectors_cook2.csv)
+- [data/processed/ml_train_dataset_used_for_models.csv](data/processed/ml_train_dataset_used_for_models.csv)
+- [data/processed/ml_test_dataset_used_for_models.csv](data/processed/ml_test_dataset_used_for_models.csv)
+- [data/processed/clusters/companies/cluster_company_list_1.csv](data/processed/clusters/companies/cluster_company_list_1.csv)
+- [data/processed/clusters/companies/cluster_company_list_2.csv](data/processed/clusters/companies/cluster_company_list_2.csv)
+- [data/processed/clusters/companies/cluster_company_list_3.csv](data/processed/clusters/companies/cluster_company_list_3.csv)
+- [data/processed/clusters/companies/cluster_company_list_4.csv](data/processed/clusters/companies/cluster_company_list_4.csv)
+- [data/processed/clusters/statistics/cluster_statistics_1.csv](data/processed/clusters/statistics/cluster_statistics_1.csv)
+- [data/processed/clusters/statistics/cluster_statistics_2.csv](data/processed/clusters/statistics/cluster_statistics_2.csv)
+- [data/processed/clusters/statistics/cluster_statistics_3.csv](data/processed/clusters/statistics/cluster_statistics_3.csv)
+- [data/processed/clusters/statistics/cluster_statistics_4.csv](data/processed/clusters/statistics/cluster_statistics_4.csv)
+
+Main notebooks:
+
+- [notebooks_new/01_data_and_problem_setup.ipynb](notebooks_new/01_data_and_problem_setup.ipynb)
+- [notebooks_new/02_econometric_analysis.ipynb](notebooks_new/02_econometric_analysis.ipynb)
+- [notebooks_new/03_machine_learning_models.ipynb](notebooks_new/03_machine_learning_models.ipynb)
+- [notebooks_new/04_clustering_comapnies.ipynb](notebooks_new/04_clustering_comapnies.ipynb)
+
+## Conclusion
+
+The project delivers an end-to-end valuation workflow: from data cleaning and econometric diagnostics to predictive modeling and business archetype discovery.
+
+The central practical conclusion is that valuation premia are linked not only to current profitability, but also to a firm's growth profile, innovation intensity, and risk structure.
